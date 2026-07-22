@@ -1,0 +1,54 @@
+# Local BraTS2020 data tree
+/dataset/*
+!/dataset/dataset-downloader.py
+/dataset/BraTS2020_TrainingData/
+/dataset/BraTS2020_ValidationData/
+
+# Medical imaging and derived data artifacts
+*.nii
+*.nii.gz
+*.dcm
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.pkl
+*.joblib
+
+# Outputs, checkpoints, caches, logs, and temp files
+outputs/
+checkpoints/
+runs/
+logs/
+wandb/
+mlruns/
+.cache/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.log
+*.tmp
+*.temp
+*.swp
+
+# Environment and OS files
+.env
+.DS_Store
+Thumbs.db
+
+# Optional data directories
+data/
+datasets/
+raw_data/
+brats2020/
+/BraTS2020/
+/BraTS20/
