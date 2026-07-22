@@ -56,6 +56,15 @@ def main() -> int:
             align_weight=CONFIG["align_loss_weight"],
             boundary_weight=CONFIG["boundary_loss_weight"],
         )
+        should_eval = (
+            epoch == 0
+            or (epoch + 1) % CONFIG["eval_every"] == 0
+            or epoch + 1 == CONFIG["epochs"]
+        )
+        if not should_eval:
+            print(f"Epoch {epoch+1}/{CONFIG['epochs']} loss={train_loss:.5f}")
+            continue
+
         val_summary, _, _ = evaluate(model, val_loader, CONFIG["label_mode"], device)
         print(
             f"Epoch {epoch+1}/{CONFIG['epochs']} "
