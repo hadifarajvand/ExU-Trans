@@ -34,6 +34,7 @@ CONFIG = {
     "num_workers": int(os.getenv("NUM_WORKERS", "0")),
     "label_mode": os.getenv("LABEL_MODE", "whole_tumor"),
     "epochs": int(os.getenv("EPOCHS", "100")),
+    "eval_every": int(os.getenv("EVAL_EVERY", "5")),
     # Paper Table 13 identifies 0.0005 and 4 transformer layers as optimal.
     "lr": float(os.getenv("LEARNING_RATE", "0.0005")),
     "num_transformer_layers": int(os.getenv("NUM_TRANSFORMER_LAYERS", "4")),
@@ -46,6 +47,7 @@ CONFIG = {
 }
 
 assert abs(CONFIG["TRAIN_RATIO"] + CONFIG["VAL_RATIO"] + CONFIG["TEST_RATIO"] - 1.0) < 1e-6
+assert CONFIG["eval_every"] >= 1
 
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 MEASURED_DIR = OUTPUT_DIR / "measured"
