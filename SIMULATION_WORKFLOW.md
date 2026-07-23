@@ -5,30 +5,28 @@
 ```text
 HDF5 Dataset
     ↓
-Dataset Loader
+Volume-safe Split
     ↓
-Train / Validation / Test Split
+Real Training
     ↓
-ExUTransLite Model
+Best Validation Checkpoint
     ↓
-Loss
+Real Test Evaluation
     ↓
-Training
+Measured Metrics CSV
     ↓
-Best Checkpoint
+Measured-only Figures / Tables
     ↓
-Evaluation
-    ↓
-Metrics
-    ↓
-Figures / Tables
-    ↓
-Paper Comparison
+Paper Reference Comparison
 ```
+
+هیچ figure یا table نباید `Measured` نامیده شود مگر اینکه از اجرای واقعی مدل ساخته شده باشد.
 
 ## 2) Dataset Loader
 
-منطق اصلی در `scripts/dataset.py` قرار دارد. هر sample از فایل HDF5 خوانده می‌شود و به‌صورت یک نمونه‌ی یکتا با اطلاعات volume و slice برگردانده می‌شود.
+منطق اصلی در `scripts/dataset.py` است.
+
+هر sample شامل:
 
 ```python
 sample = {
@@ -39,50 +37,60 @@ sample = {
 }
 ```
 
-loader روی split سطح volume کار می‌کند تا leakage بین train/validation/test رخ ندهد. در این نسخه، image چهار کانال و mask سه کانال دارد.
+split در سطح `volume` انجام می‌شود، نه slice؛ بنابراین sliceهای یک بیمار بین train/validation/test پخش نمی‌شوند.
 
-## 3) Configuration
+Debug/subset mode نیز volume انتخاب می‌کند، نه چند فایل تصادفی.
 
-تنظیمات در `scripts/config.py` تعریف می‌شوند. مهم‌ترین گزینه‌ها:
+## 3) Target
 
-- `seed`
-- `learning_rate`
-- `epochs`
-- `batch_size`
-- `device`
-- `dataset path`
-- `label mode`
-- `Transformer layers`
+HDF5 فعلی:
 
-بعضی مقدارها با environment variable قابل override هستند.
+```text
+image = 240 × 240 × 4
+mask  = 240 × 240 × 3
+```
+
+سه mask plane به‌صورت binary و mutually-exclusive دیده شده‌اند، اما نام دقیق آن‌ها از provenance به‌طور قطعی اثبات نشده است. بنابراین در کد از:
+
+```text
+Region_0
+Region_1
+Region_2
+```
+
+استفاده می‌شود.
+
+در `regions` mode، prediction سه کانال با sigmoid threshold حفظ می‌شود و دیگر با `argmax` به یک channel collapse نمی‌شود.
 
 ## 4) Model
 
-مدل اصلی در `scripts/model.py` است. `ExUTransLite` یک تقریب پژوهشی از ایده‌های مقاله است و اجزای اصلی زیر را دارد:
+مدل در `scripts/model.py` قرار دارد.
 
-- encoder سبک شبیه U-Net
-- attention / transformer blocks
+`ExUTransLite` شامل تقریب پژوهشی از:
+
+- U-Net-like encoder
+- Transformer / attention blocks
 - DAE approximation
 - fusion
 - decoder
 - segmentation head
 
-`ExUTransLite` ادعای بازتولید دقیق پارامترها و widths مقاله را ندارد.
+است و ادعای بازتولید دقیق معماری 50.3M پارامتری مقاله را ندارد.
 
 ## 5) Loss
 
-منطق loss در `scripts/losses.py` است. بخش‌های مهم:
+در `scripts/losses.py`:
 
-- pixel segmentation loss
-- Dice-related component
-- alignment / attribute component
-- boundary component
+- BCE / segmentation term
+- Dice term
+- alignment term
+- boundary term در modeهای مربوط
 
-جزئیات دقیق loss به `label_mode` وابسته است و باید با target فعلی هم‌خوان باشد.
+برای 3-channel regions، loss به‌صورت multilabel-compatible اجرا می‌شود و channelها حذف نمی‌شوند.
 
 ## 6) Training
 
-Training در `scripts/train.py` و `scripts/main.py` اجرا می‌شود.
+در `scripts/train.py` و `scripts/main.py`:
 
 ```text
 batch
@@ -94,28 +102,101 @@ batch
 → save best checkpoint
 ```
 
-بهترین checkpoint با validation انتخاب می‌شود و در `best_model.pt` ذخیره می‌گردد.
+`best_model.pt` فقط با validation انتخاب می‌شود، نه test.
 
 ## 7) Evaluation
 
-Evaluation روی volume/sliceهای validation و test انجام می‌شود و metricهای معمول را گزارش می‌کند:
+Evaluation در سطح volume بازسازی می‌شود و metricهای زیر را می‌دهد:
 
 - Dice
 - IoU
 - Precision
 - Recall
 - F1
-- HD95_px اگر spacing فیزیکی قابل اتکا نباشد
+- HD95_px
 
-واحد pixel را نباید با millimetre اشتباه گرفت.
+برای `regions` mode، metric هر `Region_0/1/2` جداگانه ذخیره می‌شود و aggregate نیز محاسبه می‌شود.
 
-## 8) Export
+## 8) اجرای حدود دو ساعته‌ی واقعی
 
-`scripts/export.py` خروجی‌های measured را به شکل CSV و figure و table می‌سازد. همه‌ی شکل‌ها باید از داده‌ی واقعی بیایند، نه از مقدارهای ساختگی.
+فایل اصلی:
 
-## 9) Paper Comparison
+```text
+scripts/budget_run.py
+```
 
-`reference/paper_targets.json` اعداد منتشرشده‌ی مقاله را نگه می‌دارد و `scripts/compare_with_paper.py` اختلاف measured و reference را محاسبه می‌کند.
+Command:
+
+```bash
+python run_full_pipeline.py budget-run \
+  --hours 2 \
+  --epochs 2 \
+  --baseline-seconds-per-batch 6.8
+```
+
+این mode:
+
+1. dataset را دوباره دانلود نمی‌کند.
+2. split اصلی volume-level را حفظ می‌کند.
+3. یک subset deterministic از train/validation/test انتخاب می‌کند.
+4. training واقعی انجام می‌دهد.
+5. best checkpoint را ذخیره می‌کند.
+6. validation/test واقعی انجام می‌دهد.
+7. CSV metric واقعی تولید می‌کند.
+8. figure/table واقعی تولید می‌کند.
+
+با benchmark فعلی CPU، target تقریبی برای ۲ ساعت حدود `14–15 train volume + 3 validation + 3 test` و حداکثر `2 epoch` است. تعداد واقعی در `run_plan.json` ثبت می‌شود.
+
+این اجرا `subset experiment` است، نه full-paper reproduction.
+
+## 9) Measured-only Export
+
+فایل:
+
+```text
+scripts/export_measured_paper_style.py
+```
+
+ورودی آن باید CSV واقعی باشد:
+
+```bash
+python run_full_pipeline.py export-measured \
+  outputs/measured_budget_120min/metrics/metrics_test.csv \
+  --output-root outputs/measured_budget_120min
+```
+
+خروجی‌های اصلی:
+
+```text
+figure_measured_metric_distributions.png
+figure_measured_per_region.png
+figure_measured_vs_paper.png
+figure_real_qualitative_examples.png
+figure_training_history.png
+
+table_measured_summary.csv
+table_measured_per_region.csv
+table_measured_vs_paper.csv
+```
+
+هیچ synthetic fallback وجود ندارد. اگر metrics CSV واقعی وجود نداشته باشد exporter باید fail کند.
+
+## 10) Reference مقاله
+
+```text
+reference/paper_targets.json
+scripts/export_paper_results.py
+```
+
+Command:
+
+```bash
+python run_full_pipeline.py reference
+```
+
+این خروجی‌ها فقط `REFERENCE_ONLY` هستند.
+
+## 11) Paper Comparison
 
 ```text
 Measured Result
@@ -125,32 +206,53 @@ Published Reference
 Difference Report
 ```
 
-Comparator فقط اختلاف را گزارش می‌کند؛ هیچ metricی را تغییر نمی‌دهد.
+Comparison برای metricهای هم‌نام مثل Dice/IoU/Precision/Recall/F1 قابل نمایش است، اما subset run نباید به‌عنوان result کامل مقاله معرفی شود.
 
-## 10) خروجی‌های تاریخی
+HD95 تا وقتی spacing فیزیکی وجود ندارد با `px` گزارش می‌شود و مستقیماً با `mm` مقاله مقایسه نمی‌شود.
 
-برخی خروجی‌های قدیمی مخزن از نظر موضوع کلی به بخش ارزیابی مقاله شبیه‌اند، اما شماره‌گذاری، نوع نمودار و منبع داده در همه‌ی موارد با شکل‌های مقاله یکسان نیستند. بنابراین باید آن‌ها را `supporting visualization` یا `historical / paper-style outputs` دانست، نه reproduction exact.
+## 12) چرا خروجی‌های قدیمی سریع بودند؟
 
-## 11) اجرای مرحله‌به‌مرحله
+مسیر قدیمی training واقعی انجام نمی‌داد. در نبود metrics واقعی، exporter می‌توانست synthetic distribution بسازد و table/figureها را از arrayهای hard-coded صادر کند.
+
+مسیر جدید:
+
+```text
+real data
+→ real optimization
+→ real prediction
+→ real metrics
+→ figure/table
+```
+
+بنابراین زمان بیشتر است، ولی provenance علمی دارد.
+
+## 13) دستورات اصلی
 
 ```bash
 source .venv/bin/activate
 
 python run_full_pipeline.py preflight
 python run_full_pipeline.py smoke
+
+# اجرای واقعی کوتاه با بودجه زمانی
+python run_full_pipeline.py budget-run --hours 2 --epochs 2 --baseline-seconds-per-batch 6.8
+
+# اجرای واقعی کامل/user-configured
 python run_full_pipeline.py train
-python run_full_pipeline.py evaluate
-python run_full_pipeline.py export
+
+# reference paper only
 python run_full_pipeline.py reference
+
+# measured vs paper
 python run_full_pipeline.py compare \
   outputs/measured/metrics/metrics_test.csv \
   --target brats2020
 ```
 
-## 12) یادداشت علمی کوتاه
+## 14) محدودیت علمی
 
-- این repository یک تقریب پژوهشی است.
-- کد رسمی نویسندگان نیست.
-- معماری کامل مقاله به‌صورت دقیق و کامل منتشر نشده است.
-- naming دقیق سه کانال HDF5 هنوز قطعی نیست.
-- خروجی‌ها نباید به‌زور با مقاله یکسان شوند.
+- repository کد رسمی نویسندگان نیست.
+- full architecture مقاله دقیقاً قابل بازسازی نیست.
+- نام دقیق channelهای mask هنوز قطعی نیست.
+- subset run برای evidence واقعی سریع مناسب است، نه ادعای full reproduction.
+- measured و reference همیشه جدا نگه داشته می‌شوند.
