@@ -1,4 +1,10 @@
-"""Measured-output exporters. Reference paper values live under outputs/reference."""
+"""Measured-output helper functions.
+
+When executed as a script, this module delegates to the reference-only exporter
+for backward compatibility with ``run_full_pipeline.py reference``. Measured
+paper-style figures/tables are generated only by ``export_measured_paper_style.py``
+from an existing real metrics CSV.
+"""
 from __future__ import annotations
 
 import json
@@ -13,11 +19,14 @@ from config import (
 
 
 def setup_output_dirs():
-    for d in [METRICS_DIR, FIGURES_DIR, PREDICTIONS_DIR, ATTENTION_DIR, CHECKPOINT_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
+    for directory in [METRICS_DIR, FIGURES_DIR, PREDICTIONS_DIR, ATTENTION_DIR, CHECKPOINT_DIR]:
+        directory.mkdir(parents=True, exist_ok=True)
 
 
 def export_metrics_table(all_metrics, dataset_type="validation"):
+    """Write genuine metrics supplied by the caller; never fabricate rows."""
+    if not all_metrics:
+        raise ValueError("No measured metrics supplied")
     df = pd.DataFrame([
         {"case_id": case_id, **metrics} for case_id, metrics in all_metrics.items()
     ])
@@ -28,8 +37,9 @@ def export_metrics_table(all_metrics, dataset_type="validation"):
 
 
 def export_comparison_chart(metrics_list, dataset_type="validation"):
+    """Plot only metrics already measured by the active run."""
     if not metrics_list:
-        return None
+        raise ValueError("No measured metrics supplied")
     fields = [
         ("Dice", "dice"), ("IoU", "iou"), ("HD95 (grid px)", "hd95_px"),
         ("Precision", "precision"), ("Recall", "recall"), ("F1", "f1"),
@@ -40,7 +50,9 @@ def export_comparison_chart(metrics_list, dataset_type="validation"):
         values = [m[key] for m in metrics_list if key in m and np.isfinite(m[key])]
         if values:
             ax.hist(values, bins=min(15, max(3, len(values))), edgecolor="black", alpha=0.7)
-        ax.set_title(f"{title} (mean: {np.nanmean(values):.4f})" if values else title)
+            ax.set_title(f"{title} (mean: {np.nanmean(values):.4f})")
+        else:
+            ax.set_title(title)
         ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     path = FIGURES_DIR / f"metrics_{dataset_type}.png"
@@ -54,3 +66,14 @@ def write_run_manifest(payload):
     path = MEASURED_DIR / "run_manifest.json"
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     return path
+
+
+def main() -> int:
+    # Backward-compatible CLI behavior: ``python scripts/export.py`` exports
+    # published reference tables only. It never synthesizes measured results.
+    from export_paper_results import main as export_reference
+    return export_reference()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
