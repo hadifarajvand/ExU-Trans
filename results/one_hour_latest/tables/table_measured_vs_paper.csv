@@ -1,0 +1,6 @@
+metric,measured_subset_percent,paper_brats2020_percent,absolute_gap_pp,scope_note
+DSC,9.776121028146134,90.6,-80.82387897185386,Subset measured run; not a full-paper reproduction
+IoU,5.5081261646944295,84.5,-78.99187383530557,Subset measured run; not a full-paper reproduction
+Precision,15.528043846507375,89.8,-74.27195615349262,Subset measured run; not a full-paper reproduction
+Recall,44.74417411129695,88.1,-43.355825888703045,Subset measured run; not a full-paper reproduction
+F1,40.89224173076344,88.9,-48.00775826923657,Subset measured run; not a full-paper reproduction

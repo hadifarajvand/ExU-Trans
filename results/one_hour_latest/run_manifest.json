@@ -1,0 +1,94 @@
+{
+  "status": "MEASURED_BUDGET_RUN_COMPLETE",
+  "scope": "REAL_DATA_SUBSET_NOT_FULL_PAPER_REPRODUCTION",
+  "dataset_root": "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/dataset/fulldataset/BraTS2020_training_data/content/data",
+  "dataset_redownloaded": false,
+  "time_budget_hours": 1.0,
+  "elapsed_seconds": 198.72247409820557,
+  "device": "mps",
+  "label_mode": "regions",
+  "epochs_requested": 2,
+  "epochs_completed": 2,
+  "best_epoch": 2,
+  "best_validation_dice": 0.5256901926480266,
+  "train_volume_ids": [
+    89,
+    105,
+    112,
+    113,
+    242,
+    255,
+    362
+  ],
+  "validation_volume_ids": [
+    153,
+    194
+  ],
+  "test_volume_ids": [
+    311,
+    325
+  ],
+  "train_slices": 1085,
+  "validation_slices": 310,
+  "test_slices": 310,
+  "batch_size": 8,
+  "learning_rate": 0.0005,
+  "transformer_layers": 4,
+  "test_summary": {
+    "dice": 0.09776121028146142,
+    "f1": 0.4089224173076344,
+    "hd95_px": 84.9136358417623,
+    "iou": 0.05508126164694434,
+    "precision": 0.15528043846507378,
+    "recall": 0.4474417411129695,
+    "region_0_dice": 0.013744273338861107,
+    "region_0_f1": 0.4512053316996445,
+    "region_0_hd95_px": 52.390914962972865,
+    "region_0_iou": 0.006967905526669285,
+    "region_0_precision": 0.3036810542280644,
+    "region_0_recall": 0.007031250121923492,
+    "region_1_dice": 0.24941383445620743,
+    "region_1_f1": 0.24941460590025993,
+    "region_1_hd95_px": 99.52210208944985,
+    "region_1_iou": 0.14274524952242476,
+    "region_1_precision": 0.14662963127539008,
+    "region_1_recall": 0.8352939692169851,
+    "region_2_dice": 0.030125523049315744,
+    "region_2_f1": 0.5261473143229989,
+    "region_2_hd95_px": 102.82789047286421,
+    "region_2_iou": 0.015530629891739001,
+    "region_2_precision": 0.0155306298917669,
+    "region_2_recall": 0.500000004,
+    "union_dice": 0.2910494562569935,
+    "union_f1": 0.29105014651879973,
+    "union_hd95_px": 97.15251578265409,
+    "union_iou": 0.17083970617194782,
+    "union_precision": 0.17512823829784763,
+    "union_recall": 0.8636676083324032
+  },
+  "export_manifest": {
+    "status": "MEASURED_ONLY",
+    "source_metrics": "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/metrics/metrics_test.csv",
+    "artifacts": [
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/tables/table_measured_summary.csv",
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/figures/figure_measured_metric_distributions.png",
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/tables/table_measured_per_region.csv",
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/figures/figure_measured_per_region.png",
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/tables/table_measured_vs_paper.csv",
+      "/Users/hadi/Documents/GitHub/aysan/ExU-Trans/outputs/measured_budget_60min/figures/figure_measured_vs_paper.png"
+    ],
+    "warnings": [
+      "No synthetic fallback is allowed.",
+      "No measured value is hard-coded.",
+      "Region_0/1/2 are intentionally unnamed until channel provenance is proven.",
+      "HD95 is reported in pixels unless physical spacing is available.",
+      "Paper comparison is contextual only because a time-budgeted subset is not the full published experiment."
+    ]
+  },
+  "scientific_notes": [
+    "All measured figures/tables trace to this real subset run.",
+    "No synthetic fallback or hard-coded measured values are used.",
+    "Region channel names remain Region_0/1/2 unless provenance is proven.",
+    "Subset metrics are not claimed as the full-paper result."
+  ]
+}

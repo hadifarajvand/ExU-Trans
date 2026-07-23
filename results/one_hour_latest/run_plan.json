@@ -1,0 +1,29 @@
+{
+  "status": "PLANNED_REAL_SUBSET",
+  "time_budget_hours": 1.0,
+  "baseline_seconds_per_batch": 6.8,
+  "epochs_requested": 2,
+  "train_volume_ids": [
+    89,
+    105,
+    112,
+    113,
+    242,
+    255,
+    362
+  ],
+  "validation_volume_ids": [
+    153,
+    194
+  ],
+  "test_volume_ids": [
+    311,
+    325
+  ],
+  "train_slices": 1085,
+  "validation_slices": 310,
+  "test_slices": 310,
+  "batch_size": 8,
+  "estimated_train_batches_per_epoch": 136,
+  "scope": "REAL_DATA_SUBSET_NOT_FULL_PAPER_REPRODUCTION"
+}
