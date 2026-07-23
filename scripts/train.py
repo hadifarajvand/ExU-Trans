@@ -1,60 +1,50 @@
-"""Training and case-level evaluation loops."""
 from __future__ import annotations
 
-from collections import defaultdict
 import numpy as np
 import torch
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
-from losses import (
-    segmentation_loss, to_pred, dice_score, iou_score,
-    precision_score_np, recall_score_np, f1_score_np, hd95,
-)
+from losses import segmentation_loss, to_pred, dice_score, hd95, iou_score, precision_score_np, recall_score_np, f1_score_np
 
 
-def train_one_epoch(
-    model, loader, optimizer, label_mode, device,
-    pixel_weight=1.0, align_weight=0.05, boundary_weight=0.05,
-):
+def train_one_epoch(model, loader, optimizer, label_mode, device):
     model.train()
-    total = 0.0
-    sums = defaultdict(float)
-    for images, masks, _, _ in tqdm(loader, desc="train", leave=False):
-        images, masks = images.to(device), masks.to(device)
-        optimizer.zero_grad(set_to_none=True)
-        logits, aux = model(images)
-        loss, parts = segmentation_loss(
-            logits, masks, aux, label_mode,
-            pixel_weight, align_weight, boundary_weight,
-        )
+    total_loss = 0.0
+    for batch in tqdm(loader, desc="train", leave=False):
+        images = batch["image"].to(device)
+        masks = batch["mask"].to(device)
+        optimizer.zero_grad()
+        outputs, aux = model(images)
+        loss, _ = segmentation_loss(outputs, masks, aux, label_mode=label_mode)
         loss.backward()
         optimizer.step()
-        total += float(loss.item())
-        for k, v in parts.items():
-            sums[k] += float(v.item())
-    n = max(len(loader), 1)
-    return total / n, {k: v / n for k, v in sums.items()}
+        total_loss += float(loss.item())
+    return total_loss / max(len(loader), 1)
 
 
-@torch.no_grad()
 def evaluate(model, loader, label_mode, device):
-    """Reconstruct each evaluated case from 2D predictions, then score per case."""
     model.eval()
-    by_case = defaultdict(dict)
+    by_case = {}
     sample_preview = []
-    for images, masks, case_id, slice_idx in tqdm(loader, desc="eval", leave=False):
-        images, masks = images.to(device), masks.to(device)
-        logits, aux = model(images)
-        pred = to_pred(logits, label_mode).cpu().numpy().squeeze()
-        target = masks.cpu().numpy().squeeze()
-        if label_mode != "whole_tumor":
-            pred = pred > 0
-            target = target > 0
-        name = case_id[0] if isinstance(case_id, (tuple, list)) else str(case_id)
-        idx = int(slice_idx[0].item() if isinstance(slice_idx, torch.Tensor) else slice_idx)
-        by_case[name][idx] = (pred.astype(np.uint8), target.astype(np.uint8))
-        if len(sample_preview) < 8:
-            sample_preview.append((images.cpu(), masks.cpu(), pred, name, idx, aux))
+    with torch.no_grad():
+        for batch in tqdm(loader, desc="eval", leave=False):
+            images = batch["image"].to(device)
+            masks = batch["mask"].to(device)
+            case_id = batch["volume_id"]
+            slice_idx = batch["slice_id"]
+            outputs, _ = model(images)
+            pred = to_pred(outputs, label_mode=label_mode).detach().cpu().numpy()
+            target = masks.detach().cpu().numpy()
+            if target.ndim == 4:
+                target = target[:, 0]
+            if label_mode == "whole_tumor":
+                pred = pred > 0
+                target = target > 0
+            name = str(case_id[0] if isinstance(case_id, (tuple, list)) else case_id)
+            idx = int(slice_idx[0].item() if isinstance(slice_idx, torch.Tensor) else slice_idx[0])
+            by_case.setdefault(name, {})[idx] = (pred.astype(np.uint8), target.astype(np.uint8))
+            if len(sample_preview) < 8:
+                sample_preview.append((images.cpu(), masks.cpu(), pred, name, idx, batch.get("metadata", {})))
 
     all_metrics = {}
     for name, slices in by_case.items():
@@ -67,13 +57,8 @@ def evaluate(model, loader, label_mode, device):
             "precision": precision_score_np(pred_volume, target_volume),
             "recall": recall_score_np(pred_volume, target_volume),
             "f1": f1_score_np(pred_volume, target_volume),
-            # Resizing and missing calibrated physical spacing make this px/grid, not mm.
             "hd95_px": hd95(pred_volume, target_volume),
         }
-
     keys = ["dice", "iou", "precision", "recall", "f1", "hd95_px"]
-    summary = {
-        k: float(np.nanmean([m[k] for m in all_metrics.values()])) if all_metrics else float("nan")
-        for k in keys
-    }
+    summary = {k: float(np.nanmean([m[k] for m in all_metrics.values()])) if all_metrics else float('nan') for k in keys}
     return summary, sample_preview, all_metrics

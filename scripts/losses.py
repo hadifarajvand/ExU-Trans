@@ -27,6 +27,14 @@ def multiclass_dice_loss(logits, targets, eps=1e-6):
     denom = probs.sum(dim=(0, 2, 3)) + one_hot.sum(dim=(0, 2, 3))
     return 1.0 - ((2 * inter + eps) / (denom + eps)).mean()
 
+def multilabel_dice_loss(logits, targets, eps=1e-6):
+    probs = torch.sigmoid(logits)
+    targets = targets.float()
+    dims = tuple(range(2, probs.ndim))
+    inter = (probs * targets).sum(dim=dims)
+    denom = probs.sum(dim=dims) + targets.sum(dim=dims)
+    return 1.0 - ((2 * inter + eps) / (denom + eps)).mean()
+
 
 def trait_guided_alignment_loss(attr_map, mask):
     # attr_map is already sigmoid-normalized to [0, 1]. Keep the target binary.
@@ -64,6 +72,12 @@ def segmentation_loss(
             "pixel": pixel.detach(), "bce": bce.detach(), "dice": dice.detach(),
             "align": align.detach(), "boundary": boundary.detach(),
         }
+
+    if label_mode == "regions":
+        bce = F.binary_cross_entropy_with_logits(logits, target.float())
+        dice = multilabel_dice_loss(logits, target)
+        total = pixel_weight * (bce + dice) + align_weight * trait_guided_alignment_loss(aux["attr_map"], target[:, :1])
+        return total, {"pixel": (bce + dice).detach(), "bce": bce.detach(), "dice": dice.detach(), "align": torch.tensor(0.0), "boundary": torch.tensor(0.0)}
 
     ce = F.cross_entropy(logits, target.long())
     dice = multiclass_dice_loss(logits, target.long())

@@ -17,9 +17,19 @@ def set_seed(seed: int = RANDOM_SEED) -> None:
 
 def setup_device():
     set_seed()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        reason = "CUDA available"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+        reason = "MPS available on Apple Silicon"
+    else:
+        device = torch.device("cpu")
+        reason = "No CUDA/MPS backend available"
     print("device:", device)
+    print("device_reason:", reason)
     print("CUDA available:", torch.cuda.is_available())
+    print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
     if torch.cuda.is_available():
         print("GPU:", torch.cuda.get_device_name(0))
         print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")

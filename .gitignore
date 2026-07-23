@@ -1,54 +1,64 @@
-# Local BraTS2020 data tree
-/dataset/*
-!/dataset/dataset-downloader.py
-/dataset/BraTS2020_TrainingData/
-/dataset/BraTS2020_ValidationData/
+# Python environments
+.venv/
+venv/
+env/
 
-# Medical imaging and derived data artifacts
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local BraTS / HDF5 dataset
+/dataset/fulldataset/
+/dataset/**/*.h5
+/dataset/**/*.hdf5
+*.h5
+*.hdf5
+
+# Other medical / raw data
 *.nii
 *.nii.gz
 *.dcm
+*.npy
+*.npz
+
+# Dataset archives
 *.zip
 *.tar
 *.tar.gz
 *.7z
 *.rar
-*.npy
-*.npz
-*.h5
-*.hdf5
+
+# Model checkpoints / large binaries
 *.pt
 *.pth
 *.ckpt
 *.onnx
-*.pkl
-*.joblib
 
-# Outputs, checkpoints, caches, logs, and temp files
-outputs/
-checkpoints/
-runs/
-logs/
-wandb/
-mlruns/
-.cache/
+# Python cache
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
 .ipynb_checkpoints/
+
+# Training / runtime caches
+.cache/
+wandb/
+mlruns/
+runs/
+logs/
+
+# Generated artifacts
+outputs/
+/dataset/dataset_manifest.json
+
+# Temporary files
 *.log
 *.tmp
 *.temp
 *.swp
 
-# Environment and OS files
-.env
+# OS
 .DS_Store
 Thumbs.db
-
-# Optional data directories
-data/
-datasets/
-raw_data/
-brats2020/
-/BraTS2020/
-/BraTS20/
