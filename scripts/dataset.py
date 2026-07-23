@@ -4,10 +4,9 @@ from __future__ import annotations
 import csv
 import json
 import random
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import h5py
 import numpy as np
@@ -21,8 +20,9 @@ DATASET_NAME = "BraTS2020 Training Data"
 DEFAULT_RELATIVE_ROOT = Path("dataset/fulldataset/BraTS2020_training_data/content/data")
 DEFAULT_CSV = Path("dataset/fulldataset/BraTS20 Training Metadata.csv")
 
+# The HDF5 tensor has four MRI channels, but exact channel provenance must come
+# from the source conversion pipeline. Do not use this tuple as proof of order.
 MODALITY_ORDER = ("FLAIR", "T1", "T1ce", "T2")
-LABEL_VALUES = (0, 1, 2, 4)
 
 
 def _is_hdf5(path: Path) -> bool:
@@ -72,21 +72,16 @@ def resolve_metadata(csv_path: Optional[Path], volume: int, slice_idx: int) -> D
 
 
 def _parse_volume_slice(path: Path) -> Tuple[int, int]:
-    stem = path.stem
-    # volume_146_slice_124
-    parts = stem.split("_")
-    volume = int(parts[1])
-    slice_idx = int(parts[3])
-    return volume, slice_idx
+    # Expected filename: volume_146_slice_124.h5
+    parts = path.stem.split("_")
+    return int(parts[1]), int(parts[3])
 
 
 def inspect_hdf5_file(path: Path) -> Dict[str, object]:
     with h5py.File(path, "r") as handle:
         keys = list(handle.keys())
-        image = handle["image"]
-        mask = handle["mask"]
-        image_arr = image[()]
-        mask_arr = mask[()]
+        image_arr = handle["image"][()]
+        mask_arr = handle["mask"][()]
         attrs = {k: handle.attrs[k] for k in handle.attrs}
     volume, slice_idx = _parse_volume_slice(path)
     return {
@@ -109,7 +104,12 @@ def inspect_hdf5_file(path: Path) -> Dict[str, object]:
 
 def write_hdf5_schema_reports(root: Path, out_json: Path, out_md: Path, sample_count: int = 3) -> Dict[str, object]:
     files = sorted(p for p in root.glob("*.h5") if p.is_file())
-    sample_paths = [files[0], files[len(files) // 2], files[-1]] if files else []
+    if not files:
+        sample_paths = []
+    elif len(files) <= sample_count:
+        sample_paths = files
+    else:
+        sample_paths = [files[0], files[len(files) // 2], files[-1]]
     reports = [inspect_hdf5_file(path) for path in sample_paths]
     payload = {
         "dataset_name": DATASET_NAME,
@@ -120,8 +120,8 @@ def write_hdf5_schema_reports(root: Path, out_json: Path, out_md: Path, sample_c
     }
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    md_lines = [
-        f"# HDF5 schema report",
+    lines = [
+        "# HDF5 schema report",
         f"- dataset_name: {DATASET_NAME}",
         f"- dataset_slug: {DATASET_SLUG}",
         f"- local_root: {root.resolve()}",
@@ -129,7 +129,7 @@ def write_hdf5_schema_reports(root: Path, out_json: Path, out_md: Path, sample_c
         "",
     ]
     for report in reports:
-        md_lines.extend([
+        lines.extend([
             f"## {Path(report['path']).name}",
             f"- image_shape: {report['image_shape']}",
             f"- mask_shape: {report['mask_shape']}",
@@ -142,7 +142,7 @@ def write_hdf5_schema_reports(root: Path, out_json: Path, out_md: Path, sample_c
             f"- image_std: {report['image_std']}",
             "",
         ])
-    out_md.write_text("\n".join(md_lines), encoding="utf-8")
+    out_md.write_text("\n".join(lines), encoding="utf-8")
     return payload
 
 
@@ -161,6 +161,9 @@ def validate_sample_file(path: Path) -> Dict[str, object]:
         if image.shape[-1] != 4:
             result["valid"] = False
             result["issues"].append("bad_channel_count")
+        if mask.shape[-1] != 3:
+            result["valid"] = False
+            result["issues"].append("bad_mask_channel_count")
         if not np.isfinite(image).all():
             result["valid"] = False
             result["issues"].append("non_finite_image")
@@ -180,8 +183,8 @@ def validate_sample_file(path: Path) -> Dict[str, object]:
 def audit_dataset(root: Path, metadata_csv: Optional[Path] = None) -> Dict[str, object]:
     files = sorted(p for p in root.glob("*.h5") if p.is_file())
     rows = [validate_sample_file(path) for path in files]
-    volumes = sorted({int(row["volume"]) for row in rows if row.get("valid")})
     valid_rows = [row for row in rows if row.get("valid")]
+    volumes = sorted({int(row["volume"]) for row in valid_rows})
     tumor_slices = 0
     background_only = 0
     duplicate_ids = 0
@@ -234,27 +237,42 @@ def write_dataset_audit(root: Path, out_json: Path, out_csv: Path, metadata_csv:
 
 
 def generate_label_mapping_report(root: Path, out_md: Path) -> Dict[str, object]:
+    """Document only what the compact HDF5 masks actually prove."""
     files = sorted(p for p in root.glob("*.h5") if p.is_file())
     union = set()
-    for path in files[:200]:
+    channel_positive = [0, 0, 0]
+    checked = 0
+    overlaps = {(0, 1): 0, (0, 2): 0, (1, 2): 0}
+    for path in files[: min(1000, len(files))]:
         with h5py.File(path, "r") as handle:
-            union.update(int(x) for x in np.unique(handle["mask"]))
+            mask = np.asarray(handle["mask"])
+        union.update(int(x) for x in np.unique(mask))
+        if mask.ndim == 3 and mask.shape[-1] == 3:
+            binary = mask > 0
+            for idx in range(3):
+                channel_positive[idx] += int(binary[..., idx].sum())
+            for pair in overlaps:
+                overlaps[pair] += int(np.logical_and(binary[..., pair[0]], binary[..., pair[1]]).sum())
+        checked += 1
     report = {
-        "original_mask_values": sorted(union),
-        "wt": [1, 2, 4],
-        "tc": [1, 4],
-        "et": [4],
-        "note": "Mask values appear binary per slice in this compact HDF5 dataset; reference BraTS region semantics still map from the standard labels if present.",
+        "mask_unique_values": sorted(union),
+        "mask_channels": 3,
+        "channel_names": ["Region_0", "Region_1", "Region_2"],
+        "channel_semantics_status": "UNRESOLVED_NAMES",
+        "structural_note": "The project audit found the three HDF5 planes to be binary and mutually exclusive. Exact WT/TC/ET or source-label channel order is not claimed without provenance.",
+        "sampled_files": checked,
+        "sampled_positive_pixels_by_channel": channel_positive,
+        "sampled_pairwise_overlap_pixels": {f"{a}_{b}": value for (a, b), value in overlaps.items()},
     }
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(
         "\n".join([
             "# Label mapping report",
-            f"- original_mask_values: {report['original_mask_values']}",
-            f"- wt: {report['wt']}",
-            f"- tc: {report['tc']}",
-            f"- et: {report['et']}",
-            f"- note: {report['note']}",
+            f"- mask_unique_values: {report['mask_unique_values']}",
+            "- mask_channels: 3",
+            "- canonical_names: Region_0, Region_1, Region_2",
+            "- semantic names: unresolved",
+            f"- note: {report['structural_note']}",
         ]),
         encoding="utf-8",
     )
@@ -276,7 +294,14 @@ def write_splits(root: Path, out_dir: Path, seed: int = 42) -> Dict[str, object]
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, ids in (("train", train_ids), ("validation", val_ids), ("test", test_ids)):
         (out_dir / f"{name}_volumes.txt").write_text("\n".join(map(str, ids)) + "\n", encoding="utf-8")
-    return {"train": train_ids, "validation": val_ids, "test": test_ids, "intersection": set(train_ids) & set(val_ids) & set(test_ids)}
+    return {
+        "train": train_ids,
+        "validation": val_ids,
+        "test": test_ids,
+        "train_val_intersection": sorted(set(train_ids) & set(val_ids)),
+        "train_test_intersection": sorted(set(train_ids) & set(test_ids)),
+        "val_test_intersection": sorted(set(val_ids) & set(test_ids)),
+    }
 
 
 def label_map(mask_2d: np.ndarray, label_mode: str) -> np.ndarray:
@@ -285,7 +310,7 @@ def label_map(mask_2d: np.ndarray, label_mode: str) -> np.ndarray:
     if label_mode == "regions":
         if mask_2d.ndim == 3 and mask_2d.shape[-1] == 3:
             return mask_2d.transpose(2, 0, 1).astype(np.float32)
-        return np.stack([(mask_2d == v).astype(np.float32) for v in (1, 2, 4)], axis=0)
+        raise ValueError("regions mode requires the explicit 3-channel HDF5 target; semantic remapping is intentionally not guessed")
     remapped = np.zeros_like(mask_2d, dtype=np.int64)
     remapped[mask_2d == 1] = 1
     remapped[mask_2d == 2] = 2
@@ -329,16 +354,13 @@ class HDF5BratsSliceDataset(Dataset):
         self.augment = augment
         self.metadata_csv = metadata_csv
         self.items: List[Tuple[Path, int]] = []
-        files = list(files)
         per_volume: Dict[int, List[Path]] = {}
         for path in files:
             volume, _ = _parse_volume_slice(path)
             per_volume.setdefault(volume, []).append(path)
         for volume in sorted(per_volume):
             paths = sorted(per_volume[volume], key=lambda p: _parse_volume_slice(p)[1])
-            selected = paths
-            if debug_max_slices_per_case is not None:
-                selected = selected[:debug_max_slices_per_case]
+            selected = paths[:debug_max_slices_per_case] if debug_max_slices_per_case is not None else paths
             self.items.extend((path, _parse_volume_slice(path)[1]) for path in selected)
 
     def __len__(self):
@@ -409,18 +431,21 @@ def build_loaders(config: Dict, summary: Dict):
         val_file.write_text("\n".join(map(str, val_ids)) + "\n", encoding="utf-8")
         test_file.write_text("\n".join(map(str, test_ids)) + "\n", encoding="utf-8")
 
+    # Debug mode must subset VOLUMES, never the first N files/slices.
+    if config["USE_DEBUG_SUBSET"]:
+        n = config["DEBUG_NUM_CASES"]
+        train_ids = train_ids[:n]
+        val_ids = val_ids[:n]
+        test_ids = test_ids[:n]
+
     def by_ids(ids: Sequence[int]) -> List[Path]:
         wanted = set(int(x) for x in ids)
         return [path for path in files if _parse_volume_slice(path)[0] in wanted]
 
-    def maybe_subset(items):
-        return items[:config["DEBUG_NUM_CASES"]] if config["USE_DEBUG_SUBSET"] else items
-
-    train_files = maybe_subset(by_ids(train_ids))
-    val_files = maybe_subset(by_ids(val_ids))
-    test_files = maybe_subset(by_ids(test_ids))
-    official_files = maybe_subset(by_ids(test_ids))
-
+    train_files = by_ids(train_ids)
+    val_files = by_ids(val_ids)
+    test_files = by_ids(test_ids)
+    official_files = list(test_files)
     debug_n = config["debug_max_slices_per_case"] if config["USE_DEBUG_SUBSET"] else None
     metadata_csv = config.get("metadata_csv")
 
