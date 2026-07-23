@@ -27,6 +27,7 @@ def multiclass_dice_loss(logits, targets, eps=1e-6):
     denom = probs.sum(dim=(0, 2, 3)) + one_hot.sum(dim=(0, 2, 3))
     return 1.0 - ((2 * inter + eps) / (denom + eps)).mean()
 
+
 def multilabel_dice_loss(logits, targets, eps=1e-6):
     probs = torch.sigmoid(logits)
     targets = targets.float()
@@ -74,10 +75,17 @@ def segmentation_loss(
         }
 
     if label_mode == "regions":
+        # The compact HDF5 target is three binary, mutually-exclusive planes.
+        # Keep the representation explicit and train each channel with sigmoid/BCE;
+        # do not collapse it through softmax/argmax during training or evaluation.
         bce = F.binary_cross_entropy_with_logits(logits, target.float())
         dice = multilabel_dice_loss(logits, target)
-        total = pixel_weight * (bce + dice) + align_weight * trait_guided_alignment_loss(aux["attr_map"], target[:, :1])
-        return total, {"pixel": (bce + dice).detach(), "bce": bce.detach(), "dice": dice.detach(), "align": torch.tensor(0.0), "boundary": torch.tensor(0.0)}
+        align = trait_guided_alignment_loss(aux["attr_map"], target[:, :1])
+        total = pixel_weight * (bce + dice) + align_weight * align
+        return total, {
+            "pixel": (bce + dice).detach(), "bce": bce.detach(), "dice": dice.detach(),
+            "align": align.detach(), "boundary": torch.tensor(0.0, device=logits.device),
+        }
 
     ce = F.cross_entropy(logits, target.long())
     dice = multiclass_dice_loss(logits, target.long())
@@ -95,9 +103,12 @@ def segmentation_loss(
     }
 
 
-def to_pred(logits, label_mode="whole_tumor"):
+def to_pred(logits, label_mode="whole_tumor", threshold=0.5):
+    """Convert logits to discrete predictions without changing target semantics."""
     if label_mode == "whole_tumor":
-        return (torch.sigmoid(logits) > 0.5).long()
+        return (torch.sigmoid(logits) > threshold).long()
+    if label_mode == "regions":
+        return (torch.sigmoid(logits) > threshold).long()
     return torch.argmax(torch.softmax(logits, dim=1), dim=1, keepdim=True)
 
 
